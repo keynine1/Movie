@@ -1,41 +1,35 @@
 import { NextResponse } from "next/server";
-import { connectMongoDB } from "@/lib/mongodb";
-import User from "@/models/User";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import mongoose from "mongoose";
+import { connectMongoDB } from "@/lib/mongodb";
+import User from "@/models/User";
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } | Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
-  const { id } = await params;
-
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any).role !== "admin") {
+  if (!session || session.user.role !== "admin") {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 
   const { role } = await req.json();
-  if (!["user", "admin"].includes(role)) {
+  if (role !== "admin" && role !== "user") {
     return NextResponse.json({ message: "Invalid role" }, { status: 400 });
   }
 
   await connectMongoDB();
+  const updated = await User.findByIdAndUpdate(
+    params.id,
+    { role },
+    { new: true }
+  )
+    .select("-password")
+    .lean();
 
-  const _id = new mongoose.Types.ObjectId(id);
-
-  const result = await User.updateOne(
-    { _id },
-    { $set: { role } }
-  );
-
-
-  if (result.matchedCount === 0) {
+  if (!updated) {
     return NextResponse.json({ message: "User not found" }, { status: 404 });
   }
 
-  const after = await User.findById(_id).select("_id email role").lean();
-
-  return NextResponse.json({ ok: true, user: after });
+  return NextResponse.json({ user: updated });
 }
