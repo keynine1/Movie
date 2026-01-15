@@ -4,30 +4,23 @@ import { authOptions } from "@/lib/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import User from "@/models/User";
 
-type Role = "user" | "admin";
-
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
-  // 1) Auth
   const session = await getServerSession(authOptions);
-  const myId = session?.user?.id;
-
-  if (!myId) {
+  if (!session?.user?.id) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  // 2) DB
   await connectMongoDB();
 
-  // 3) Check admin
-  const me = await User.findById(myId).select("role").lean();
+  // ✅ เช็คคนเรียกเป็น admin จาก DB (ปลอดภัยสุด)
+  const me = await User.findById(session.user.id).select("role").lean();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 
-  // 4) Parse body safely
   let body: any;
   try {
     body = await req.json();
@@ -35,18 +28,19 @@ export async function PATCH(
     return NextResponse.json({ message: "Invalid JSON body" }, { status: 400 });
   }
 
-  const role = body?.role as Role | undefined;
+  const role = body?.role;
   if (role !== "user" && role !== "admin") {
     return NextResponse.json({ message: "Invalid role" }, { status: 400 });
   }
 
-  // 5) Update
+  const { id } = context.params;
+
   const updated = await User.findByIdAndUpdate(
-    params.id,
+    id,
     { role },
     { new: true }
   )
-    .select("_id name email role")
+    .select("_id name email role createdAt")
     .lean();
 
   if (!updated) {
