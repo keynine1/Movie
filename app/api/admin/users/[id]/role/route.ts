@@ -8,6 +8,8 @@ export async function PATCH(
   req: Request,
   context: { params: { id: string } }
 ) {
+  const { id } = context.params;
+
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -15,37 +17,26 @@ export async function PATCH(
 
   await connectMongoDB();
 
-  // ✅ เช็คคนเรียกเป็น admin จาก DB (ปลอดภัยสุด)
-  const me = await User.findById(session.user.id).select("role").lean();
+  // เช็ค admin
+  const me = await User.findById(session.user.id).lean();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ message: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const role = body?.role;
+  const { role } = await req.json();
   if (role !== "user" && role !== "admin") {
     return NextResponse.json({ message: "Invalid role" }, { status: 400 });
   }
-
-  const { id } = context.params;
 
   const updated = await User.findByIdAndUpdate(
     id,
     { role },
     { new: true }
-  )
-    .select("_id name email role createdAt")
-    .lean();
+  ).lean();
 
   if (!updated) {
     return NextResponse.json({ message: "User not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ message: "ok", user: updated }, { status: 200 });
+  return NextResponse.json({ message: "ok", user: updated });
 }
