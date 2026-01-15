@@ -4,31 +4,49 @@ import { authOptions } from "@/lib/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import User from "@/models/User";
 
-// GET: list users
-export async function GET() {
+async function requireAdmin() {
   const session = await getServerSession(authOptions);
+  const myId = session?.user?.id;
 
-  if (!session || session.user.role !== "admin") {
-    return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-  }
+  if (!myId) return { ok: false as const, status: 401, message: "Unauthorized" };
 
   await connectMongoDB();
-  const users = await User.find().select("-password").lean();
+  const me = await User.findById(myId).select("role").lean();
 
-  return NextResponse.json({ users });
-}
-
-// PATCH: update user role
-export async function PATCH(req: Request) {
-  const session = await getServerSession(authOptions);
-
-  if (!session || session.user.role !== "admin") {
-    return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+  if (!me || me.role !== "admin") {
+    return { ok: false as const, status: 403, message: "Forbidden" };
   }
 
-  const body = await req.json().catch(() => null);
-  const userId = body?.userId;
-  const role = body?.role;
+  return { ok: true as const };
+}
+
+// GET: list users
+export async function GET() {
+  const admin = await requireAdmin();
+  if (!admin.ok) {
+    return NextResponse.json({ message: admin.message }, { status: admin.status });
+  }
+
+  const users = await User.find().select("_id name email role createdAt").lean();
+  return NextResponse.json({ users }, { status: 200 });
+}
+
+// PATCH: update user role  (payload: { userId, role })
+export async function PATCH(req: Request) {
+  const admin = await requireAdmin();
+  if (!admin.ok) {
+    return NextResponse.json({ message: admin.message }, { status: admin.status });
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ message: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const userId = body?.userId as string | undefined;
+  const role = body?.role as "admin" | "user" | undefined;
 
   if (!userId || (role !== "admin" && role !== "user")) {
     return NextResponse.json(
@@ -37,19 +55,13 @@ export async function PATCH(req: Request) {
     );
   }
 
-  await connectMongoDB();
-
-  const updated = await User.findByIdAndUpdate(
-    userId,
-    { role },
-    { new: true }
-  )
-    .select("-password")
+  const updated = await User.findByIdAndUpdate(userId, { role }, { new: true })
+    .select("_id name email role createdAt")
     .lean();
 
   if (!updated) {
     return NextResponse.json({ message: "User not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ user: updated });
+  return NextResponse.json({ user: updated }, { status: 200 });
 }
