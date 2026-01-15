@@ -10,10 +10,8 @@ export default async function HomePage() {
         <h1 className="text-2xl font-semibold tracking-tight">หนังยอดนิยม</h1>
         <p className="text-sm text-white/60">ดูรายละเอียดหนัง</p>
       </div>
-      
 
       <MoviesListPage movies={data.results} />
     </div>
   );
-  
 }
