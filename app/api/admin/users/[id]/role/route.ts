@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import User from "@/models/User";
 
-export async function PATCH(
-  req: Request,
-  context: { params: { id: string } }
-) {
+type Ctx = { params: { id: string } | Promise<{ id: string }> };
+
+export async function PATCH(req: NextRequest, context: Ctx) {
+  const { id } = await context.params; // ✅ รองรับทั้ง object และ Promise
+
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -15,19 +17,18 @@ export async function PATCH(
 
   await connectMongoDB();
 
-  // เช็คว่าคนเรียกเป็น admin จริง
+  // เช็คว่าเป็น admin จริง
   const me = await User.findById(session.user.id).lean();
   if (!me || me.role !== "admin") {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 
-  const { role } = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
+  const role = body?.role;
 
-  if (role !== "user" && role !== "admin") {
+  if (role !== "admin" && role !== "user") {
     return NextResponse.json({ message: "Invalid role" }, { status: 400 });
   }
-
-  const { id } = context.params;
 
   const updated = await User.findByIdAndUpdate(id, { role }, { new: true })
     .select("-password")

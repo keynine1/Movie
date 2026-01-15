@@ -4,6 +4,8 @@ import Link from "next/link";
 import FavoriteButton from "@/components/FavoriteButton";
 import { getMovieCredits, getMovieDetail, getMovieVideos } from "@/lib/tmdb";
 
+/* ---------------- Types ---------------- */
+
 type TMDbVideo = { key: string; site: string; type: string };
 type TMDbVideosResponse = { results: TMDbVideo[] };
 
@@ -18,7 +20,7 @@ type TMDbCreditsResponse = { cast: TMDbCast[] };
 
 type TMDbMovieDetail = {
   id: number;
-  title: string;
+  title?: string;
   overview?: string;
   poster_path?: string | null;
   backdrop_path?: string | null;
@@ -29,15 +31,39 @@ type TMDbMovieDetail = {
   genres?: { id: number; name: string }[];
 };
 
-// ✅ สำคัญ: รองรับ params เป็น Promise ตามที่ Next แจ้ง
+// ✅ รองรับ params เป็น Promise (ตามที่ Next 16+ บาง config เตือน)
 type ParamsLike = { id: string } | Promise<{ id: string }>;
+
+/* ---------------- Helpers ---------------- */
+
+function pickTrailerKey(videos?: TMDbVideosResponse) {
+  const list = videos?.results ?? [];
+  const trailer =
+    list.find((v) => v.site === "YouTube" && v.type === "Trailer") ||
+    list.find((v) => v.site === "YouTube" && v.type === "Teaser") ||
+    list.find((v) => v.site === "YouTube");
+  return trailer?.key;
+}
+
+function tmdbImg(path: string, size: "w342" | "w500" | "original" = "w500") {
+  return `https://image.tmdb.org/t/p/${size}${path}`;
+}
+
+function formatRuntime(min?: number | null) {
+  if (!min) return "-";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+/* ---------------- Metadata ---------------- */
 
 export async function generateMetadata({
   params,
 }: {
   params: ParamsLike;
 }): Promise<Metadata> {
-  const { id } = await Promise.resolve(params); // ✅ unwrap params
+  const { id } = await Promise.resolve(params);
   const movieId = Number(id);
 
   if (!Number.isFinite(movieId)) {
@@ -47,7 +73,9 @@ export async function generateMetadata({
   try {
     const movie = (await getMovieDetail(movieId)) as TMDbMovieDetail;
 
-    const title = movie?.title ? `${movie.title} | MoviesApp` : "MoviesApp";
+    const safeTitle = movie?.title ?? "MoviesApp";
+    const title = `${safeTitle} | MoviesApp`;
+
     const description =
       movie?.overview?.trim() ||
       "ดูรายละเอียดหนัง นักแสดง ตัวอย่าง และจัดการรายการโปรดของคุณ";
@@ -79,32 +107,14 @@ export async function generateMetadata({
   }
 }
 
-function pickTrailerKey(videos?: TMDbVideosResponse) {
-  const list = videos?.results ?? [];
-  const trailer =
-    list.find((v) => v.site === "YouTube" && v.type === "Trailer") ||
-    list.find((v) => v.site === "YouTube" && v.type === "Teaser") ||
-    list.find((v) => v.site === "YouTube");
-  return trailer?.key;
-}
-
-function tmdbImg(path: string, size: "w342" | "w500" | "original" = "w500") {
-  return `https://image.tmdb.org/t/p/${size}${path}`;
-}
-
-function formatRuntime(min?: number | null) {
-  if (!min) return "-";
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return h ? `${h}h ${m}m` : `${m}m`;
-}
+/* ---------------- Page ---------------- */
 
 export default async function MovieDetailPage({
   params,
 }: {
   params: ParamsLike;
 }) {
-  const { id } = await Promise.resolve(params); // ✅ unwrap params
+  const { id } = await Promise.resolve(params);
   const movieId = Number(id);
 
   if (!Number.isFinite(movieId)) {
@@ -115,18 +125,30 @@ export default async function MovieDetailPage({
     );
   }
 
-  const [movie, credits, videos] = await Promise.all([
-    getMovieDetail(movieId) as Promise<TMDbMovieDetail>,
-    getMovieCredits(movieId) as Promise<TMDbCreditsResponse>,
-    getMovieVideos(movieId) as Promise<TMDbVideosResponse>,
+  const [movieRaw, creditsRaw, videosRaw] = await Promise.all([
+    getMovieDetail(movieId),
+    getMovieCredits(movieId),
+    getMovieVideos(movieId),
   ]);
 
+  const movie = movieRaw as unknown as TMDbMovieDetail;
+const credits = creditsRaw as unknown as TMDbCreditsResponse;
+const videos = videosRaw as unknown as TMDbVideosResponse;
+
+
+  const safeTitle = movie?.title ?? "Unknown title";
   const trailerKey = pickTrailerKey(videos);
+
   const cast = (credits?.cast ?? []).slice(0, 14);
 
-  const year = movie?.release_date ? new Date(movie.release_date).getFullYear() : null;
+  const year = movie?.release_date
+    ? new Date(movie.release_date).getFullYear()
+    : null;
+
   const rating =
-    typeof movie?.vote_average === "number" ? movie.vote_average.toFixed(1) : "-";
+    typeof movie?.vote_average === "number"
+      ? movie.vote_average.toFixed(1)
+      : "-";
 
   const poster = movie?.poster_path ?? null;
   const backdrop = movie?.backdrop_path ?? null;
@@ -138,7 +160,7 @@ export default async function MovieDetailPage({
         {backdrop ? (
           <Image
             src={tmdbImg(backdrop, "original")}
-            alt={movie.title}
+            alt={safeTitle}
             fill
             priority
             className="object-cover opacity-35"
@@ -156,7 +178,7 @@ export default async function MovieDetailPage({
             Movies
           </Link>
           <span className="text-white/30">/</span>
-          <span className="truncate text-white/80">{movie.title}</span>
+          <span className="truncate text-white/80">{safeTitle}</span>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[340px_1fr]">
@@ -167,7 +189,7 @@ export default async function MovieDetailPage({
                 {poster ? (
                   <Image
                     src={tmdbImg(poster, "w500")}
-                    alt={movie.title}
+                    alt={safeTitle}
                     fill
                     priority
                     sizes="(max-width: 1024px) 70vw, 340px"
@@ -184,7 +206,7 @@ export default async function MovieDetailPage({
               <div className="p-4 space-y-2">
                 <FavoriteButton
                   movieId={movie.id}
-                  title={movie.title}
+                  title={safeTitle}
                   posterPath={movie.poster_path ?? ""}
                 />
 
@@ -210,10 +232,10 @@ export default async function MovieDetailPage({
           </div>
 
           {/* Info */}
-<div className="min-w-0 space-y-6">
+          <div className="min-w-0 space-y-6">
             <div>
               <h1 className="text-2xl font-semibold text-white sm:text-4xl">
-                {movie.title}
+                {safeTitle}
               </h1>
 
               {movie?.tagline ? (
@@ -247,35 +269,35 @@ export default async function MovieDetailPage({
             </div>
 
             <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-  {/* Overview */}
-  <div className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
-    <h2 className="text-sm font-semibold text-white">Overview</h2>
-    <p className="mt-2 break-words text-sm leading-relaxed text-white/75 sm:text-[15px]">
-      {movie.overview || "No overview."}
-    </p>
-  </div>
+              {/* Overview */}
+              <div className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
+                <h2 className="text-sm font-semibold text-white">Overview</h2>
+                <p className="mt-2 break-words text-sm leading-relaxed text-white/75 sm:text-[15px]">
+                  {movie.overview || "No overview."}
+                </p>
+              </div>
 
-  {/* Stats */}
-  <div className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
-    <h2 className="text-sm font-semibold text-white">Details</h2>
-    <div className="mt-3 space-y-3 text-sm">
-      <div className="flex items-center justify-between">
-        <span className="text-white/50">Release</span>
-        <span className="text-white">{movie.release_date || "-"}</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-white/50">Rating</span>
-        <span className="text-white">{rating}</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-white/50">Runtime</span>
-        <span className="text-white">{formatRuntime(movie.runtime)}</span>
-      </div>
-    </div>
-  </div>
-</div>
+              {/* Stats */}
+              <div className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
+                <h2 className="text-sm font-semibold text-white">Details</h2>
+                <div className="mt-3 space-y-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/50">Release</span>
+                    <span className="text-white">{movie.release_date || "-"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/50">Rating</span>
+                    <span className="text-white">{rating}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/50">Runtime</span>
+                    <span className="text-white">{formatRuntime(movie.runtime)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-
+            {/* Cast */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-white">Top Cast</h2>
@@ -287,7 +309,7 @@ export default async function MovieDetailPage({
                 <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {cast.map((c) => (
                     <div
-                      key={c.cast_id ?? c.credit_id}
+                      key={c.credit_id} // ✅ แก้ตรงนี้ (ดีที่สุด)
                       className="w-[120px] shrink-0 overflow-hidden rounded-2xl bg-white/5 ring-1 ring-white/10"
                     >
                       <div className="relative aspect-[3/4]">
@@ -319,6 +341,7 @@ export default async function MovieDetailPage({
               )}
             </div>
 
+            {/* Trailer Embed */}
             <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
               <h2 className="mb-3 text-sm font-semibold text-white">Trailer</h2>
               {trailerKey ? (
