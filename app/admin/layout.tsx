@@ -1,6 +1,8 @@
+// app/admin/layout.tsx
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import AdminShell from "@/components/admin/AdminShell";
 
 export default async function AdminLayout({
   children,
@@ -12,13 +14,5 @@ export default async function AdminLayout({
   if (!session?.user) redirect("/login");
   if (session.user.role !== "admin") redirect("/");
 
-  return (
-    <div style={{ padding: 20 }}>
-      <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-        <a href="/admin">Dashboard</a>
-        <a href="/admin/users">Users</a>
-      </div>
-      {children}
-    </div>
-  );
+  return <AdminShell userEmail={session.user.email}>{children}</AdminShell>;
 }
